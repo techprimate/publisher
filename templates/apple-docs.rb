@@ -1,7 +1,3 @@
-# Homebrew formula template for `apple-docs` (stable channel).
-#
-# Url points at the registry (packages.techprimate.com), NOT at GitHub Release assets,
-# so the formula has no dependency on the (possibly private) source repo.
 class AppleDocs < Formula
   desc "CLI to explore Apple Developer Documentation"
   homepage "https://github.com/techprimate/apple-docs-cli"
