@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout publisher
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Compute release metadata
         id: meta
@@ -95,7 +95,7 @@ jobs:
         run: echo "user-id=$(gh api "/users/${{ steps.tap-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: techprimate/homebrew-tap
           token: ${{ steps.tap-token.outputs.token }}
