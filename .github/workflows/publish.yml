@@ -1,0 +1,61 @@
+name: Publish to Release Registry
+run-name: "Publish (${{ inputs.source_repo }}, ${{ inputs.tag }})"
+
+# The single, serialized write path that turns a project's GitHub Release into
+# signed rpm/deb/Homebrew/raw packages on packages.techprimate.app.
+#
+# Triggered cross-repo by a project's release.yml via the TECHPRIMATE_RELEASE_BOT app:
+#   gh workflow run publish.yml -R techprimate/publisher \
+#     -f source_repo=techprimate/apple-docs -f tag=v1.3.0
+#
+# This is a thin dispatch entrypoint: the actual work lives in reusable
+# workflows (_registry.yml, _homebrew.yml), mirroring techprimate/apple-docs's
+# release.yml composition.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Source repo holding the GitHub Release (e.g. techprimate/apple-docs)
+        required: true
+        type: string
+      tag:
+        description: Release tag to publish (e.g. v1.3.0)
+        required: true
+        type: string
+
+# Single writer. cancel-in-progress:false makes the whole run (both reusable
+# workflows) a serialized lock that eliminates createrepo_c / apt-ftparchive
+# index races by construction. Known limitation (deferred): GitHub keeps at most
+# one run queued, so triggers arriving during a run beyond the next are dropped.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  registry:
+    name: Registry (rpm / deb / raw)
+    uses: ./.github/workflows/_registry.yml
+    with:
+      source_repo: ${{ inputs.source_repo }}
+      tag: ${{ inputs.tag }}
+    secrets: inherit
+
+  homebrew:
+    name: Homebrew tap
+    needs: registry
+    uses: ./.github/workflows/_homebrew.yml
+    with:
+      source_repo: ${{ inputs.source_repo }}
+      tag: ${{ inputs.tag }}
+    secrets: inherit
+
+  publish-required-check:
+    name: Publish - Required Check
+    needs: [registry, homebrew]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for failures
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: echo "One of the publish jobs failed." && exit 1

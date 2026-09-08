@@ -1,0 +1,6 @@
+version = 1
+agents = ["codex"]
+
+[[skills]]
+name = "dotagents"
+source = "getsentry/dotagents"

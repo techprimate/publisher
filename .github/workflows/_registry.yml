@@ -1,0 +1,96 @@
+name: Publish - Registry
+
+# Reusable workflow: builds + signs rpm/deb, copies raw binaries, incrementally
+# indexes, syncs to the R2 registry and purges the edge cache. All heavy lifting
+# is in scripts/publish.sh; this file just provisions the toolchain + secrets.
+
+on:
+  workflow_call:
+    inputs:
+      source_repo:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+jobs:
+  registry:
+    name: rpm / deb / raw → R2
+    runs-on: ubuntu-latest
+    container:
+      image: node:24-bookworm
+    # Optional approval gate — configure protection rules on the `publish`
+    # environment to require a human to release. No rules == runs freely.
+    environment: publish
+    permissions:
+      contents: read
+    # The k8s container runner defaults run steps to `sh`; force bash so
+    # `set -o pipefail`, arrays, and the script shebang behave as written.
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Registry coordinates (provisioned by techprimate/infra → shared-datastore).
+      R2_BUCKET: techprimate-release-registry
+      R2_S3_ENDPOINT: https://1a71b3889a983bf1d6b0e244adb35be5.r2.cloudflarestorage.com
+      REGISTRY_DOMAIN: packages.techprimate.app
+      CLOUDFLARE_ZONE_ID: 6cba8db62c5c973ce426235c0657c1c4
+    steps:
+      - name: Checkout publisher
+        uses: actions/checkout@v6
+
+      - name: Install packaging toolchain
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+
+          # awscli (v1, from Debian) talks to R2 without the request-checksum
+          # incompatibilities of recent aws-cli v2. apt-utils provides
+          # apt-ftparchive; createrepo-c + rpm cover the rpm side.
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl jq xz-utils gettext-base gnupg rpm createrepo-c apt-utils awscli
+
+          # nfpm — pinned binary from the goreleaser project.
+          NFPM_VERSION=2.43.0
+          curl -fsSL -o /tmp/nfpm.tar.gz \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          tar -xzf /tmp/nfpm.tar.gz -C /usr/local/bin nfpm
+
+          # gh CLI (downloads release assets, incl. from private source repos).
+          GH_VERSION=2.62.0
+          curl -fsSL -o /tmp/gh.tar.gz \
+            "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          install "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Compute source repo name
+        id: meta
+        run: echo "repo_name=${SOURCE_REPO##*/}" >> "$GITHUB_OUTPUT"
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+
+      - name: Generate TECHPRIMATE_RELEASE_BOT token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TECHPRIMATE_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.TECHPRIMATE_RELEASE_BOT_PRIVATE_KEY }}
+          owner: techprimate
+          # bare repo name, not owner/repo
+          repositories: ${{ steps.meta.outputs.repo_name }}
+          permission-contents: read
+
+      - name: Build, sign, index, publish
+        run: ./scripts/publish.sh
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}

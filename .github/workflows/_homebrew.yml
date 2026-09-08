@@ -1,0 +1,136 @@
+name: Publish - Homebrew
+
+# Reusable workflow: renders the Homebrew formula from templates/<pkg>.rb and
+# opens an auto-merging PR against techprimate/homebrew-tap.
+#
+# sha256 values are taken from the source release's checksums.txt — the publisher
+# copies those exact binaries to the registry, so the hashes match what is served.
+
+on:
+  workflow_call:
+    inputs:
+      source_repo:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+jobs:
+  homebrew:
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout publisher
+        uses: actions/checkout@v6
+
+      - name: Compute release metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          repo_name="${{ inputs.source_repo }}"; repo_name="${repo_name##*/}"
+          version="${{ inputs.tag }}"; version="${version#v}"
+          formula="${repo_name}"
+          {
+            echo "repo_name=${repo_name}"
+            echo "version=${version}"
+            echo "formula=${formula}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate source release token
+        id: source-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TECHPRIMATE_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.TECHPRIMATE_RELEASE_BOT_PRIVATE_KEY }}
+          owner: techprimate
+          repositories: ${{ steps.meta.outputs.repo_name }}
+          permission-contents: read
+
+      - name: Extract SHA256 values from source release
+        id: checksums
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          set -eo pipefail
+          gh release download "${{ inputs.tag }}" \
+            --repo "${{ inputs.source_repo }}" \
+            --pattern "checksums.txt" \
+            --dir .
+
+          extract_sha() {
+            local sha
+            sha=$(grep "$1\$" checksums.txt | awk '{print $1}')
+            if [ -z "$sha" ]; then
+              echo "Error: No checksum found for $1" >&2
+              exit 1
+            fi
+            echo "$sha"
+          }
+
+          name="${{ steps.meta.outputs.repo_name }}"
+          {
+            echo "darwin_amd64=$(extract_sha "${name}-darwin-amd64")"
+            echo "darwin_arm64=$(extract_sha "${name}-darwin-arm64")"
+            echo "linux_amd64=$(extract_sha "${name}-linux-amd64")"
+            echo "linux_arm64=$(extract_sha "${name}-linux-arm64")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate Homebrew tap token
+        id: tap-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TECHPRIMATE_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.TECHPRIMATE_RELEASE_BOT_PRIVATE_KEY }}
+          owner: techprimate
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Get GitHub App user ID
+        id: app-user
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: echo "user-id=$(gh api "/users/${{ steps.tap-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v6
+        with:
+          repository: techprimate/homebrew-tap
+          token: ${{ steps.tap-token.outputs.token }}
+          path: homebrew-tap
+
+      - name: Render formula
+        run: |
+          set -eo pipefail
+          mkdir -p homebrew-tap/Formula
+          sed -e 's/{{VERSION}}/${{ steps.meta.outputs.version }}/g' \
+              -e 's/{{SHA_DARWIN_AMD64}}/${{ steps.checksums.outputs.darwin_amd64 }}/g' \
+              -e 's/{{SHA_DARWIN_ARM64}}/${{ steps.checksums.outputs.darwin_arm64 }}/g' \
+              -e 's/{{SHA_LINUX_AMD64}}/${{ steps.checksums.outputs.linux_amd64 }}/g' \
+              -e 's/{{SHA_LINUX_ARM64}}/${{ steps.checksums.outputs.linux_arm64 }}/g' \
+              "templates/${{ steps.meta.outputs.formula }}.rb" \
+              > "homebrew-tap/Formula/${{ steps.meta.outputs.formula }}.rb"
+
+      - name: Create PR on Homebrew tap
+        id: create-pr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.tap-token.outputs.token }}
+          path: homebrew-tap
+          branch: update-${{ steps.meta.outputs.formula }}-${{ steps.meta.outputs.version }}
+          delete-branch: true
+          commit-message: "feat: update ${{ steps.meta.outputs.formula }} to ${{ steps.meta.outputs.version }}"
+          committer: "${{ steps.tap-token.outputs.app-slug }}[bot] <${{ steps.app-user.outputs.user-id }}+${{ steps.tap-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
+          author: "${{ steps.tap-token.outputs.app-slug }}[bot] <${{ steps.app-user.outputs.user-id }}+${{ steps.tap-token.outputs.app-slug }}[bot]@users.noreply.github.com>"
+          title: "feat: update ${{ steps.meta.outputs.formula }} to ${{ steps.meta.outputs.version }}"
+          body: "Automated formula update for `${{ inputs.source_repo }}@${{ inputs.tag }}`."
+
+      - name: Enable auto-merge
+        if: steps.create-pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          gh pr merge --squash --auto "${{ steps.create-pr.outputs.pull-request-number }}" \
+            --repo techprimate/homebrew-tap
