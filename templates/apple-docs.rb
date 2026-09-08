@@ -7,6 +7,8 @@ class AppleDocs < Formula
   homepage "https://github.com/techprimate/apple-docs-cli"
   version "{{VERSION}}"
 
+  depends_on :macos
+
   on_macos do
     on_arm do
       url "https://packages.techprimate.com/apple-docs/bin/v{{VERSION}}/apple-docs-darwin-arm64"
