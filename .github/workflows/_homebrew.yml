@@ -25,17 +25,28 @@ jobs:
       - name: Checkout publisher
         uses: actions/checkout@v7
 
+      - name: Install yq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yq
+
       - name: Compute release metadata
         id: meta
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          repo_name="${{ inputs.source_repo }}"; repo_name="${repo_name##*/}"
-          version="${{ inputs.tag }}"; version="${version#v}"
-          formula="${repo_name}"
+          project="${SOURCE_REPO##*/}"
+          manifest="packages/${project}/manifest.yaml"
+          test -f "$manifest"
+          version="${TAG#v}"
           {
-            echo "repo_name=${repo_name}"
+            echo "repo_name=${project}"
             echo "version=${version}"
-            echo "formula=${formula}"
+            echo "binary=$(yq -er '.binary' "$manifest")"
+            echo "formula=$(yq -er '.homebrew_formula' "$manifest")"
+            echo "manifest=${manifest}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate source release token
@@ -69,12 +80,19 @@ jobs:
             echo "$sha"
           }
 
-          name="${{ steps.meta.outputs.repo_name }}"
+          binary="${{ steps.meta.outputs.binary }}"
+          manifest="${{ steps.meta.outputs.manifest }}"
+          configured_sha() {
+            local platform="$1"
+            if yq -e ".platforms[] | select(. == \"${platform}\")" "$manifest" >/dev/null; then
+              extract_sha "${binary}-${platform}"
+            fi
+          }
           {
-            echo "darwin_amd64=$(extract_sha "${name}-darwin-amd64")"
-            echo "darwin_arm64=$(extract_sha "${name}-darwin-arm64")"
-            echo "linux_amd64=$(extract_sha "${name}-linux-amd64")"
-            echo "linux_arm64=$(extract_sha "${name}-linux-arm64")"
+            echo "darwin_amd64=$(configured_sha darwin-amd64)"
+            echo "darwin_arm64=$(configured_sha darwin-arm64)"
+            echo "linux_amd64=$(configured_sha linux-amd64)"
+            echo "linux_arm64=$(configured_sha linux-arm64)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate Homebrew tap token

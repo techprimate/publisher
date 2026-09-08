@@ -1,17 +1,3 @@
-# apt source for the techprimate release registry — STABLE channel, source of truth
-# (deb822 format). Published verbatim to https://packages.techprimate.app/techprimate.sources
-# by the publisher. One stanza per onboarded project, separated by a blank line.
-#
-# End-user install:
-#   sudo curl -fsSL https://packages.techprimate.app/RPM-GPG-KEY-techprimate \
-#     | sudo gpg --dearmor -o /usr/share/keyrings/techprimate-archive-keyring.gpg
-#   sudo curl -fsSL https://packages.techprimate.app/techprimate.sources \
-#     -o /etc/apt/sources.list.d/techprimate.sources
-#   sudo apt update && sudo apt install apple-docs
-
-Types: deb
-URIs: https://packages.techprimate.app/apple-docs/deb
-Suites: stable
-Components: main
-Architectures: amd64 arm64
-Signed-By: /usr/share/keyrings/techprimate-archive-keyring.gpg
+# apt source for the techprimate release registry — stable channel, source of truth.
+# Published verbatim to https://packages.techprimate.com/techprimate.sources by the publisher.
+# Add one deb822 stanza per project that publishes Linux packages, separated by a blank line.

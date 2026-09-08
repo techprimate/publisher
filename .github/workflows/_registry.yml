@@ -25,6 +25,9 @@ jobs:
     environment: publish
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     env:
       R2_BUCKET: techprimate-release-registry
       R2_S3_ENDPOINT: https://338c484fe5f05599982379290d23131f.r2.cloudflarestorage.com
@@ -44,7 +47,7 @@ jobs:
           # incompatibilities of recent aws-cli v2. apt-utils provides
           # apt-ftparchive; createrepo-c + rpm cover the rpm side.
           apt-get install -y --no-install-recommends \
-            ca-certificates curl jq xz-utils gettext-base gnupg rpm createrepo-c apt-utils awscli
+            ca-certificates curl jq yq xz-utils gettext-base gnupg rpm createrepo-c apt-utils awscli
 
           # nfpm — pinned binary from the goreleaser project.
           NFPM_VERSION=2.43.0

@@ -3,18 +3,18 @@
 # publish.sh — the single, serialized write path of techprimate/publisher.
 #
 # Turns a project's GitHub Release into signed rpm/deb/Homebrew/raw packages and
-# publishes them to the R2-backed registry at packages.techprimate.app. Convergent and
-# overwrite-safe: re-running for the same (SOURCE_REPO, TAG) ends in the same
-# registry state. Published versions are immutable — a rerun that would change an
+# publishes them to the R2-backed registry at packages.techprimate.com.
+# Convergent and overwrite-safe: re-running for the same (SOURCE_REPO, TAG)
+# ends in the same registry state. Published versions are immutable — a rerun that would change an
 # already-published artifact fails loudly rather than overwriting it.
 #
 # Required environment (set by .github/workflows/publish.yml):
-#   SOURCE_REPO            e.g. techprimate/apple-docs
+#   SOURCE_REPO            e.g. techprimate/apple-docs-cli
 #   TAG                    e.g. v1.3.0
-#   GH_TOKEN              TECHPRIMATE_RELEASE_BOT app token (contents:read on SOURCE_REPO)
-#   R2_BUCKET             techprimate-release-registry
+#   GH_TOKEN               TECHPRIMATE_RELEASE_BOT app token (contents:read on SOURCE_REPO)
+#   R2_BUCKET              techprimate-release-registry
 #   R2_S3_ENDPOINT        https://<account>.r2.cloudflarestorage.com
-#   REGISTRY_DOMAIN       packages.techprimate.app
+#   REGISTRY_DOMAIN       packages.techprimate.com
 #   CLOUDFLARE_ZONE_ID    zone id for the cache purge
 #   CLOUDFLARE_API_TOKEN  token authorised to purge the zone cache
 #   AWS_ACCESS_KEY_ID     R2 access key id   (from CLOUDFLARE_ACCESS_KEY_ID)
@@ -28,22 +28,67 @@ set -euo pipefail
 
 # --- Config / constants -------------------------------------------------------
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 if [ "${PUBLISHER_TEST_MODE:-}" = "1" ]; then
-  SOURCE_REPO="${SOURCE_REPO:-techprimate/test}"
+  SOURCE_REPO="${SOURCE_REPO:-techprimate/apple-docs-cli}"
   TAG="${TAG:-v0.0.0}"
   R2_BUCKET="${R2_BUCKET:-test-bucket}"
   R2_S3_ENDPOINT="${R2_S3_ENDPOINT:-https://example.invalid}"
 fi
-PKG="${SOURCE_REPO##*/}"          # techprimate/apple-docs -> apple-docs
-VERSION="${TAG#v}"                # v1.3.0 -> 1.3.0
+
+# Manifests are keyed by source repository. They keep the repository name,
+# public package name, installed binary name, and supported platforms separate.
+PROJECT="${SOURCE_REPO##*/}"
+MANIFEST="${REPO_ROOT}/packages/${PROJECT}/manifest.yaml"
+
+if [ ! -f "$MANIFEST" ]; then
+  printf 'Missing publisher manifest: %s\n' "$MANIFEST" >&2
+  exit 1
+fi
+
+PKG="$(yq -er '.package' "$MANIFEST")"
+BINARY_NAME="$(yq -er '.binary' "$MANIFEST")"
+PUBLISH_LINUX_PACKAGES="$(yq -r '.linux_packages' "$MANIFEST")"
+
+# Platform names are also release asset suffixes. For example, darwin-arm64
+# resolves to the release asset apple-docs-darwin-arm64.
+RELEASE_ASSETS=()
+while IFS= read -r asset; do
+  RELEASE_ASSETS+=("$asset")
+done < <(yq -er '.platforms[]' "$MANIFEST")
+
+if [ "$PUBLISH_LINUX_PACKAGES" != "true" ] && [ "$PUBLISH_LINUX_PACKAGES" != "false" ]; then
+  printf 'linux_packages must be true or false in %s\n' "$MANIFEST" >&2
+  exit 1
+fi
+
+if [ "${#RELEASE_ASSETS[@]}" -eq 0 ]; then
+  printf 'platforms must not be empty in %s\n' "$MANIFEST" >&2
+  exit 1
+fi
+
+VERSION="${TAG#v}" # v1.3.0 -> 1.3.0
 SUITE="stable"
 
 export AWS_DEFAULT_REGION="auto"  # R2 ignores region but the CLI requires one.
 export AWS_REQUEST_CHECKSUM_CALCULATION="when_required"  # R2 rejects aws-chunked default checksums.
 
-# nfpm arch (left) drives the rpm $basearch dir (right). Go arch == nfpm arch here.
-declare -A RPM_BASEARCH=( [amd64]=x86_64 [arm64]=aarch64 )
+# nfpm architecture names differ from the directory names expected by RPM.
 ARCHES=(amd64 arm64)
+
+rpm_basearch() {
+  case "$1" in
+    amd64)
+      printf 'x86_64\n'
+      ;;
+    arm64)
+      printf 'aarch64\n'
+      ;;
+    *)
+      fail "unsupported rpm architecture: $1"
+      ;;
+  esac
+}
 
 WORK="$(mktemp -d)"
 MIRROR="${WORK}/mirror/${PKG}"    # local mirror of s3://$R2_BUCKET/$PKG (rpm + deb)
@@ -52,8 +97,14 @@ export GNUPGHOME="${WORK}/gnupg"
 mkdir -p "$MIRROR" "$BUILD" "$GNUPGHOME"
 chmod 700 "$GNUPGHOME"
 
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+log() {
+  printf '\033[1;34m==>\033[0m %s\n' "$*"
+}
+
+fail() {
+  printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2
+  exit 1
+}
 
 s3() { aws s3 --endpoint-url "$R2_S3_ENDPOINT" "$@"; }
 s3api() { aws s3api --endpoint-url "$R2_S3_ENDPOINT" "$@"; }
@@ -61,7 +112,7 @@ s3api() { aws s3api --endpoint-url "$R2_S3_ENDPOINT" "$@"; }
 render_nfpm_config() {  # ARCH OUT
   local arch="$1" out="$2"
   ARCH="$arch" GOARCH="$arch" VERSION="$VERSION" MTIME="$MTIME" \
-    envsubst < "${REPO_ROOT}/packages/${PKG}/nfpm.yaml" > "$out"
+    envsubst < "${REPO_ROOT}/packages/${SOURCE_REPO##*/}/nfpm.yaml" > "$out"
 }
 
 # ensure_immutable LOCAL_FILE S3_KEY
@@ -118,37 +169,75 @@ if [ "${PUBLISHER_TEST_MODE:-}" = "1" ]; then
   exit 0
 fi
 
-# detached, armored signature with the loaded signing key
+# Create an armored detached signature with the imported package-signing key.
 gpg_sign_detached() {  # SRC DST
   gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PASS_FILE" \
       --digest-algo sha256 -u "$GPG_KEY_ID" --armor --detach-sign -o "$2" "$1"
 }
 
 # === 0. GPG setup =============================================================
-log "Importing signing key"
-printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
-GPG_KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')"
-[ -n "$GPG_KEY_ID" ] || fail "no secret key found after import"
-PASS_FILE="${WORK}/passphrase"
-printf '%s' "$GPG_PASSPHRASE" > "$PASS_FILE"
-chmod 600 "$PASS_FILE"
+# GPG signs RPM packages and Linux repository metadata. Raw binaries use
+# immutable paths and Homebrew verifies their SHA256 checksums, so macOS-only
+# projects do not need to import the package-signing key.
+if [ "$PUBLISH_LINUX_PACKAGES" = "true" ]; then
+  log "Importing signing key"
+  printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+  GPG_KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')"
+  [ -n "$GPG_KEY_ID" ] || fail "no secret key found after import"
+  PASS_FILE="${WORK}/passphrase"
+  printf '%s' "$GPG_PASSPHRASE" > "$PASS_FILE"
+  chmod 600 "$PASS_FILE"
 
-# rpm signing macros (loopback pinentry so it is non-interactive)
-cat > "$HOME/.rpmmacros" <<EOF
+  # rpm signing macros (loopback pinentry so it is non-interactive)
+  cat > "$HOME/.rpmmacros" <<EOF
 %_gpg_name ${GPG_KEY_ID}
 %__gpg /usr/bin/gpg
 %__gpg_sign_cmd %{__gpg} gpg --no-verbose --no-armor --batch --yes --pinentry-mode loopback --passphrase-file ${PASS_FILE} --digest-algo sha256 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
 EOF
+fi
 
 # === 1. Download release binaries ============================================
+# Build an explicit list of gh patterns from the manifest. This prevents a
+# project from publishing undeclared release assets by accident.
 log "Downloading ${SOURCE_REPO}@${TAG} release assets"
 mkdir -p "${BUILD}/dist"
-gh release download "$TAG" --repo "$SOURCE_REPO" --dir "${BUILD}/dist" \
-  --pattern "${PKG}-linux-*" --pattern "${PKG}-darwin-*" --clobber
-for f in "${PKG}-linux-amd64" "${PKG}-linux-arm64" "${PKG}-darwin-amd64" "${PKG}-darwin-arm64"; do
-  [ -f "${BUILD}/dist/${f}" ] || fail "missing release asset: ${f}"
-  chmod +x "${BUILD}/dist/${f}"
+
+download_args=()
+for asset in "${RELEASE_ASSETS[@]}"; do
+  download_args+=(--pattern "${BINARY_NAME}-${asset}")
 done
+
+gh release download "$TAG" --repo "$SOURCE_REPO" --dir "${BUILD}/dist" \
+  "${download_args[@]}" --clobber
+
+# Fail before publishing if the release does not contain every declared asset.
+for asset in "${RELEASE_ASSETS[@]}"; do
+  file="${BINARY_NAME}-${asset}"
+  [ -f "${BUILD}/dist/${file}" ] || fail "missing release asset: ${file}"
+  chmod +x "${BUILD}/dist/${file}"
+done
+
+# === 2. Stage raw binaries ====================================================
+# Every project publishes its original binaries under a version-pinned prefix.
+# Homebrew formulas point to these registry copies instead of the source release.
+log "Staging raw binaries (bin/v${VERSION})"
+bindir="${BUILD}/bin/v${VERSION}"
+mkdir -p "$bindir"
+
+for asset in "${RELEASE_ASSETS[@]}"; do
+  file="${BINARY_NAME}-${asset}"
+  cp -f "${BUILD}/dist/${file}" "${bindir}/${file}"
+  ensure_immutable "${bindir}/${file}" "${PKG}/bin/v${VERSION}/${file}"
+done
+
+# A macOS-only project is complete after the raw binaries are uploaded. The
+# remaining phases exclusively build and index Linux packages.
+if [ "$PUBLISH_LINUX_PACKAGES" = "false" ]; then
+  log "Uploading raw binaries"
+  s3 sync "${BUILD}/bin" "s3://${R2_BUCKET}/${PKG}/bin" --no-progress
+  log "Published ${PROJECT} ${VERSION} to ${REGISTRY_DOMAIN}"
+  exit 0
+fi
 
 # Reproducible builds: pin timestamps to the tag's commit date (no wall clock).
 COMMIT_DATE="$(gh api "repos/${SOURCE_REPO}/commits/${TAG}" --jq '.commit.committer.date')"
@@ -157,7 +246,7 @@ SOURCE_DATE_EPOCH="$(date -u -d "$COMMIT_DATE" +%s)"
 MTIME="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
 log "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} (${MTIME})"
 
-# === 2. Pull existing index state ============================================
+# === 3. Pull existing index state ============================================
 # rpm/deb metadata is regenerated from the full set of packages, so the existing
 # package bodies must be present locally. They are immutable and small at our
 # release cadence; aws s3 sync only fetches what is missing. (bin/** needs no
@@ -167,9 +256,9 @@ s3 sync "s3://${R2_BUCKET}/${PKG}/rpm/stable" "${MIRROR}/rpm/stable" --no-progre
 s3 sync "s3://${R2_BUCKET}/${PKG}/deb/pool/stable" "${MIRROR}/deb/pool/stable" --no-progress 2>/dev/null || true
 s3 sync "s3://${R2_BUCKET}/${PKG}/deb/dists/${SUITE}" "${MIRROR}/deb/dists/${SUITE}" --no-progress 2>/dev/null || true
 
-# === 3. Build + sign rpm =====================================================
+# === 4. Build + sign rpm =====================================================
 for arch in "${ARCHES[@]}"; do
-  basearch="${RPM_BASEARCH[$arch]}"
+  basearch="$(rpm_basearch "$arch")"
   outdir="${MIRROR}/rpm/stable/${basearch}"
   nfpm_config="${BUILD}/nfpm-${arch}.yaml"
   mkdir -p "$outdir"
@@ -189,7 +278,7 @@ for arch in "${ARCHES[@]}"; do
   fi
 done
 
-# === 4. Build deb ============================================================
+# === 5. Build deb ============================================================
 # deb packages are verified by apt via the signed InRelease (step 7), the apt
 # standard — so the .deb bodies themselves are not individually signed.
 mkdir -p "${MIRROR}/deb/pool/stable"
@@ -204,18 +293,9 @@ for arch in "${ARCHES[@]}"; do
   cp -f "$debfile" "${MIRROR}/deb/pool/stable/"
 done
 
-# === 5. Raw binaries =========================================================
-log "Staging raw binaries (bin/v${VERSION})"
-bindir="${BUILD}/bin/v${VERSION}"
-mkdir -p "$bindir"
-for f in "${PKG}-linux-amd64" "${PKG}-linux-arm64" "${PKG}-darwin-amd64" "${PKG}-darwin-arm64"; do
-  cp -f "${BUILD}/dist/${f}" "${bindir}/${f}"
-  ensure_immutable "${bindir}/${f}" "${PKG}/bin/v${VERSION}/${f}"
-done
-
 # === 6. Index rpm (createrepo_c) + deb (apt-ftparchive) ======================
 for arch in "${ARCHES[@]}"; do
-  basearch="${RPM_BASEARCH[$arch]}"
+  basearch="$(rpm_basearch "$arch")"
   log "Indexing rpm (stable/${basearch})"
   if [ -d "${MIRROR}/rpm/stable/${basearch}/repodata" ]; then
     createrepo_c --update "${MIRROR}/rpm/stable/${basearch}" >/dev/null
@@ -236,7 +316,7 @@ done
 
 # === 7. Sign metadata ========================================================
 for arch in "${ARCHES[@]}"; do
-  basearch="${RPM_BASEARCH[$arch]}"
+  basearch="$(rpm_basearch "$arch")"
   log "Signing repomd.xml (stable/${basearch})"
   gpg_sign_detached "${MIRROR}/rpm/stable/${basearch}/repodata/repomd.xml" \
                     "${MIRROR}/rpm/stable/${basearch}/repodata/repomd.xml.asc"
@@ -285,7 +365,7 @@ s3 cp "${REPO_ROOT}/repo/techprimate.sources" "s3://${R2_BUCKET}/techprimate.sou
 log "Purging Cloudflare cache for metadata paths"
 purge_urls=()
 for arch in "${ARCHES[@]}"; do
-  basearch="${RPM_BASEARCH[$arch]}"
+  basearch="$(rpm_basearch "$arch")"
   base="https://${REGISTRY_DOMAIN}/${PKG}/rpm/stable/${basearch}/repodata"
   purge_urls+=( "\"${base}/repomd.xml\"" "\"${base}/repomd.xml.asc\"" )
   dbase="https://${REGISTRY_DOMAIN}/${PKG}/deb/dists/${SUITE}/main/binary-${arch}"
@@ -301,4 +381,4 @@ curl -fsS -X POST \
   -H "Content-Type: application/json" \
   --data "{\"files\":[${files_json}]}" >/dev/null
 
-log "Published ${PKG} ${VERSION} to ${REGISTRY_DOMAIN}"
+log "Published ${PROJECT} ${VERSION} to ${REGISTRY_DOMAIN}"

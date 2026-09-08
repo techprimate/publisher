@@ -6,17 +6,17 @@ run-name: "Publish (${{ inputs.source_repo }}, ${{ inputs.tag }})"
 #
 # Triggered cross-repo by a project's release.yml via the TECHPRIMATE_RELEASE_BOT app:
 #   gh workflow run publish.yml -R techprimate/publisher \
-#     -f source_repo=techprimate/apple-docs -f tag=v1.3.0
+#     -f source_repo=techprimate/apple-docs-cli -f tag=v1.3.0
 #
 # This is a thin dispatch entrypoint: the actual work lives in reusable
-# workflows (_registry.yml, _homebrew.yml), mirroring techprimate/apple-docs's
+# workflows (_registry.yml, _homebrew.yml), mirroring techprimate/apple-docs-cli's
 # release.yml composition.
 
 on:
   workflow_dispatch:
     inputs:
       source_repo:
-        description: Source repo holding the GitHub Release (e.g. techprimate/apple-docs)
+        description: Source repo holding the GitHub Release (e.g. techprimate/apple-docs-cli)
         required: true
         type: string
       tag:

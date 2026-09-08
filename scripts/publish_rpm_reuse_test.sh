@@ -42,10 +42,14 @@ EOF
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-SOURCE_REPO="techprimate/apple-docs"
+SOURCE_REPO="techprimate/apple-docs-cli"
 CHANNEL=nightly PUBLISHER_TEST_MODE=1 source "${REPO_ROOT}/scripts/publish.sh"
 
 [ "$SUITE" = "stable" ] || fail_test "legacy CHANNEL input must not enable nightly publishing"
+[ "$PKG" = "apple-docs" ] || fail_test "manifest package name was not loaded"
+[ "$BINARY_NAME" = "apple-docs" ] || fail_test "manifest binary name was not loaded"
+[ "$PUBLISH_LINUX_PACKAGES" = "false" ] || fail_test "macOS-only project enabled Linux packages"
+[ "${RELEASE_ASSETS[*]}" = "darwin-amd64 darwin-arm64" ] || fail_test "unexpected release assets"
 
 if [ "${PUBLISHER_CONFIG_ONLY_TEST:-}" = "1" ]; then
   printf 'PASS: publisher configuration is stable-only\n'

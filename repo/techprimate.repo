@@ -1,14 +1,4 @@
 # dnf/yum source for the techprimate release registry — source of truth.
-# Published verbatim to https://packages.techprimate.app/techprimate.repo by the publisher.
-# One section per onboarded project. Binaries are static
-# (CGO_ENABLED=0), so a single rpm per $basearch serves Fedora, RHEL, Alma,
-# Rocky and CentOS alike — the tree splits by $basearch only, never by
-# $releasever.
-
-[techprimate-apple-docs]
-name=techprimate - apple-docs
-baseurl=https://packages.techprimate.app/apple-docs/rpm/stable/$basearch/
-enabled=1
-gpgcheck=1
-repo_gpgcheck=1
-gpgkey=https://packages.techprimate.app/RPM-GPG-KEY-techprimate
+# Published verbatim to https://packages.techprimate.com/techprimate.repo by the publisher.
+# One section per project that publishes Linux packages. Static binaries use one
+# package per $basearch across Fedora, RHEL, AlmaLinux, Rocky Linux, and CentOS.

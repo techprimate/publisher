@@ -15,8 +15,8 @@ It publishes:
 
 The registry flow has three parts:
 
-1. Project repos, such as `techprimate/apple-docs`, build binaries and publish them to
-   their own GitHub Release.
+1. Project repos, such as `techprimate/apple-docs-cli`, build binaries and publish
+   them to their own GitHub Release.
 2. This publisher repo downloads those release assets, packages them, signs
    packages and metadata, updates indexes, syncs to Cloudflare R2, and opens a
    Homebrew tap PR.
@@ -34,7 +34,8 @@ of the GPG signing key and R2 write token.
 |   |-- _registry.yml     # reusable rpm/deb/raw registry publish workflow
 |   `-- _homebrew.yml     # reusable Homebrew formula publish workflow
 |-- packages/
-|   `-- apple-docs/nfpm.yaml    # per-project nfpm package config
+|   `-- apple-docs-cli/
+|       `-- manifest.yaml   # product names, platforms, and package formats
 |-- repo/
 |   |-- techprimate.repo    # dnf/yum source
 |   `-- techprimate.sources # apt deb822 source
@@ -53,7 +54,7 @@ Publishing is triggered by `workflow_dispatch`:
 
 ```sh
 gh workflow run publish.yml -R techprimate/publisher \
-  -f source_repo=techprimate/apple-docs \
+  -f source_repo=techprimate/apple-docs-cli \
   -f tag=v1.3.0
 ```
 
@@ -67,21 +68,15 @@ cancel-in-progress: false }`, so there is only one registry writer at a time.
 The registry job runs first; the Homebrew job runs after registry publication
 succeeds.
 
-At a high level, `scripts/publish.sh`:
+At a high level, `scripts/publish.sh` reads the source project's manifest,
+downloads only its declared release assets, verifies immutable versioned paths,
+and publishes raw binaries under `bin/v<version>/`. When `linux_packages` is
+true, it also builds signed RPM and DEB packages, updates their indexes, and
+publishes the shared repository metadata. macOS-only projects skip all Linux
+packaging and GPG setup.
 
-1. Imports the GPG signing key from GitHub secrets.
-2. Downloads Linux and Darwin release assets from the source repo.
-3. Pins package timestamps to the source tag date for reproducible builds.
-4. Mirrors the existing RPM and DEB registry trees from R2.
-5. Builds and signs RPM packages with `nfpm` and `rpm --addsign`.
-6. Builds DEB packages with `nfpm`.
-7. Copies raw binaries under `bin/v<version>/`.
-8. Regenerates RPM and apt indexes.
-9. Signs repository metadata.
-10. Uploads package bodies before metadata.
-11. Publishes shared repo files and purges Cloudflare metadata cache paths.
-
-Homebrew publication is handled by `_homebrew.yml`: it reads SHA256 values from
+Homebrew publication is handled by `_homebrew.yml`: it reads the manifest and
+SHA256 values from
 the source release's `checksums.txt`, renders the matching formula template, and
 opens an auto-merging PR against `techprimate/homebrew-tap`.
 
@@ -109,17 +104,10 @@ packages.techprimate.com/
 |-- techprimate.repo
 |-- techprimate.sources
 `-- apple-docs/
-    |-- rpm/
-    |   `-- stable/
-    |       |-- x86_64/
-    |       `-- aarch64/
-    |-- deb/
-    |   |-- pool/
-    |   |   `-- stable/
-    |   `-- dists/
-    |       `-- stable/
     `-- bin/
         `-- v<version>/
+            |-- apple-docs-darwin-amd64
+            `-- apple-docs-darwin-arm64
 ```
 
 Each project owns its own registry prefix. RPM trees split by `$basearch`, apt
@@ -127,24 +115,7 @@ uses `stable` as its suite, and raw binaries are stored under `bin/v<version>/`.
 
 ## End-User Install
 
-DNF/YUM:
-
-```sh
-sudo dnf config-manager --add-repo https://packages.techprimate.com/techprimate.repo
-sudo dnf install apple-docs
-```
-
-APT:
-
-```sh
-sudo curl -fsSL https://packages.techprimate.com/RPM-GPG-KEY-techprimate \
-  | sudo gpg --dearmor -o /usr/share/keyrings/techprimate-archive-keyring.gpg
-sudo curl -fsSL https://packages.techprimate.com/techprimate.sources \
-  -o /etc/apt/sources.list.d/techprimate.sources
-sudo apt update
-sudo apt install apple-docs
-```
-
+Apple Docs CLI supports macOS and installs the `apple-docs` executable through
 Homebrew:
 
 ```sh
@@ -182,13 +153,15 @@ to secrets and variables by name only.
 
 To publish another project:
 
-1. Add `packages/<name>/nfpm.yaml`.
-2. Add `templates/<name>.rb`.
-3. Add a `[techprimate-<name>]` section to `repo/techprimate.repo`.
-4. Add or update a stanza in `repo/techprimate.sources`.
-5. Ensure the source repo's release workflow triggers `publish.yml` with
+1. Add `packages/<source-repo>/manifest.yaml` with its package name, binary name,
+   release platforms, Linux-package flag, and Homebrew formula name.
+2. Add the configured formula under `templates/`.
+3. If `linux_packages` is true, add `packages/<source-repo>/nfpm.yaml`, a DNF
+   section in `repo/techprimate.repo`, and an apt stanza in
+   `repo/techprimate.sources`.
+4. Ensure the source repo's release workflow triggers `publish.yml` with
    `source_repo` and `tag`.
-6. Confirm that publishing the binary publicly is intended.
+5. Confirm that publishing the binary publicly is intended.
 
 Package descriptions and changelogs must be explicit in `nfpm.yaml`. Do not
 derive public package metadata from private git history.
@@ -199,6 +172,7 @@ Available make targets:
 
 ```sh
 make help
+make test
 make format
 ```
 

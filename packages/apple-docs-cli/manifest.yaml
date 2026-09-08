@@ -1,0 +1,7 @@
+package: apple-docs
+binary: apple-docs
+platforms:
+  - darwin-amd64
+  - darwin-arm64
+linux_packages: false
+homebrew_formula: apple-docs

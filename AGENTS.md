@@ -19,6 +19,8 @@ the R2-backed registry at `packages.techprimate.com`.
 
 ## Onboarding a project
 
-Add `packages/<name>/nfpm.yaml` (+ a `templates/<name>.rb` formula), add a
-`[section]` to `repo/techprimate.repo`, and have that project's `release.yml` trigger
-this workflow. No registry access is granted to project repos.
+Add `packages/<source-repo>/manifest.yaml` and the configured Homebrew formula
+template. For projects that publish Linux packages, also add `nfpm.yaml`, a
+section to `repo/techprimate.repo`, and a stanza to `repo/techprimate.sources`.
+Have the project's release workflow trigger this workflow. No registry access is
+granted to project repos.
