@@ -9,15 +9,14 @@ class AppleDocs < Formula
 
   depends_on :macos
 
-  on_macos do
-    on_arm do
-      url "https://packages.techprimate.com/apple-docs/bin/v{{VERSION}}/apple-docs-darwin-arm64"
-      sha256 "{{SHA_DARWIN_ARM64}}"
-    end
-    on_intel do
-      url "https://packages.techprimate.com/apple-docs/bin/v{{VERSION}}/apple-docs-darwin-amd64"
-      sha256 "{{SHA_DARWIN_AMD64}}"
-    end
+  if Hardware::CPU.arm?
+    url "https://packages.techprimate.com/apple-docs/bin/v{{VERSION}}/apple-docs-darwin-arm64"
+    sha256 "{{SHA_DARWIN_ARM64}}"
+  end
+
+  if Hardware::CPU.intel?
+    url "https://packages.techprimate.com/apple-docs/bin/v{{VERSION}}/apple-docs-darwin-amd64"
+    sha256 "{{SHA_DARWIN_AMD64}}"
   end
 
   def install
