@@ -38,7 +38,7 @@ jobs:
       CLOUDFLARE_ZONE_ID: 6cba8db62c5c973ce426235c0657c1c4
     steps:
       - name: Checkout publisher
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install packaging toolchain
         run: |
