@@ -2,7 +2,7 @@ name: Publish to Release Registry
 run-name: "Publish (${{ inputs.source_repo }}, ${{ inputs.tag }})"
 
 # The single, serialized write path that turns a project's GitHub Release into
-# signed rpm/deb/Homebrew/raw packages on packages.techprimate.app.
+# signed rpm/deb/Homebrew/raw packages on packages.techprimate.com.
 #
 # Triggered cross-repo by a project's release.yml via the TECHPRIMATE_RELEASE_BOT app:
 #   gh workflow run publish.yml -R techprimate/publisher \

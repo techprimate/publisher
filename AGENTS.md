@@ -2,7 +2,7 @@
 
 `techprimate/publisher` — the single, serialized write path that turns a project's
 GitHub Release into signed rpm/deb/Homebrew/raw packages and publishes them to
-the R2-backed registry at `packages.techprimate.app`.
+the R2-backed registry at `packages.techprimate.com`.
 
 ## Hard constraints
 

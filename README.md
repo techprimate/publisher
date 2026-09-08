@@ -2,7 +2,7 @@
 
 `techprimate/publisher` is the single, serialized write path that turns a
 project's GitHub Release into installable packages and publishes them to the
-public techprimate release registry at `packages.techprimate.app`.
+public techprimate release registry at `packages.techprimate.com`.
 
 It publishes:
 
@@ -20,7 +20,7 @@ The registry flow has three parts:
 2. This publisher repo downloads those release assets, packages them, signs
    packages and metadata, updates indexes, syncs to Cloudflare R2, and opens a
    Homebrew tap PR.
-3. Cloudflare R2 serves the passive public registry at `packages.techprimate.app`.
+3. Cloudflare R2 serves the passive public registry at `packages.techprimate.com`.
 
 Project repos do not receive registry credentials. This repo is the only holder
 of the GPG signing key and R2 write token.
@@ -104,7 +104,7 @@ points to missing package bodies.
 The public registry is served from Cloudflare R2:
 
 ```text
-packages.techprimate.app/
+packages.techprimate.com/
 |-- RPM-GPG-KEY-techprimate
 |-- techprimate.repo
 |-- techprimate.sources
@@ -130,16 +130,16 @@ uses `stable` as its suite, and raw binaries are stored under `bin/v<version>/`.
 DNF/YUM:
 
 ```sh
-sudo dnf config-manager --add-repo https://packages.techprimate.app/techprimate.repo
+sudo dnf config-manager --add-repo https://packages.techprimate.com/techprimate.repo
 sudo dnf install apple-docs
 ```
 
 APT:
 
 ```sh
-sudo curl -fsSL https://packages.techprimate.app/RPM-GPG-KEY-techprimate \
+sudo curl -fsSL https://packages.techprimate.com/RPM-GPG-KEY-techprimate \
   | sudo gpg --dearmor -o /usr/share/keyrings/techprimate-archive-keyring.gpg
-sudo curl -fsSL https://packages.techprimate.app/techprimate.sources \
+sudo curl -fsSL https://packages.techprimate.com/techprimate.sources \
   -o /etc/apt/sources.list.d/techprimate.sources
 sudo apt update
 sudo apt install apple-docs

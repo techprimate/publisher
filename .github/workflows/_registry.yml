@@ -25,17 +25,11 @@ jobs:
     environment: publish
     permissions:
       contents: read
-    # The k8s container runner defaults run steps to `sh`; force bash so
-    # `set -o pipefail`, arrays, and the script shebang behave as written.
-    defaults:
-      run:
-        shell: bash
     env:
-      # Registry coordinates (provisioned by techprimate/infra → shared-datastore).
       R2_BUCKET: techprimate-release-registry
-      R2_S3_ENDPOINT: https://1a71b3889a983bf1d6b0e244adb35be5.r2.cloudflarestorage.com
-      REGISTRY_DOMAIN: packages.techprimate.app
-      CLOUDFLARE_ZONE_ID: 6cba8db62c5c973ce426235c0657c1c4
+      R2_S3_ENDPOINT: https://338c484fe5f05599982379290d23131f.r2.cloudflarestorage.com
+      REGISTRY_DOMAIN: packages.techprimate.com
+      CLOUDFLARE_ZONE_ID: 7208342398db3b925c888e4c36fafba0
     steps:
       - name: Checkout publisher
         uses: actions/checkout@v7
