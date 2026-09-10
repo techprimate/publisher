@@ -48,19 +48,18 @@ fi
 
 PKG="$(yq -er '.package' "$MANIFEST")"
 BINARY_NAME="$(yq -er '.binary' "$MANIFEST")"
-PUBLISH_LINUX_PACKAGES="$(yq -r '.linux_packages' "$MANIFEST")"
 
 # Platform names are also release asset suffixes. For example, darwin-arm64
-# resolves to the release asset apple-docs-darwin-arm64.
+# resolves to the release asset apple-docs-darwin-arm64. Declaring any Linux
+# platform enables Linux package generation.
+PUBLISH_LINUX_PACKAGES=false
 RELEASE_ASSETS=()
 while IFS= read -r asset; do
   RELEASE_ASSETS+=("$asset")
+  case "$asset" in
+    linux-*) PUBLISH_LINUX_PACKAGES=true ;;
+  esac
 done < <(yq -er '.platforms[]' "$MANIFEST")
-
-if [ "$PUBLISH_LINUX_PACKAGES" != "true" ] && [ "$PUBLISH_LINUX_PACKAGES" != "false" ]; then
-  printf 'linux_packages must be true or false in %s\n' "$MANIFEST" >&2
-  exit 1
-fi
 
 if [ "${#RELEASE_ASSETS[@]}" -eq 0 ]; then
   printf 'platforms must not be empty in %s\n' "$MANIFEST" >&2
@@ -177,8 +176,8 @@ gpg_sign_detached() {  # SRC DST
 
 # === 0. GPG setup =============================================================
 # GPG signs RPM packages and Linux repository metadata. Raw binaries use
-# immutable paths and Homebrew verifies their SHA256 checksums, so macOS-only
-# projects do not need to import the package-signing key.
+# immutable paths and Homebrew verifies their SHA256 checksums, so projects
+# without Linux platforms do not need to import the package-signing key.
 if [ "$PUBLISH_LINUX_PACKAGES" = "true" ]; then
   log "Importing signing key"
   printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
@@ -230,8 +229,8 @@ for asset in "${RELEASE_ASSETS[@]}"; do
   ensure_immutable "${bindir}/${file}" "${PKG}/bin/v${VERSION}/${file}"
 done
 
-# A macOS-only project is complete after the raw binaries are uploaded. The
-# remaining phases exclusively build and index Linux packages.
+# A project without Linux platforms is complete after the raw binaries are
+# uploaded. The remaining phases exclusively build and index Linux packages.
 if [ "$PUBLISH_LINUX_PACKAGES" = "false" ]; then
   log "Uploading raw binaries"
   s3 sync "${BUILD}/bin" "s3://${R2_BUCKET}/${PKG}/bin" --no-progress

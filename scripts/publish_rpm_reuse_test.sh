@@ -48,8 +48,10 @@ CHANNEL=nightly PUBLISHER_TEST_MODE=1 source "${REPO_ROOT}/scripts/publish.sh"
 [ "$SUITE" = "stable" ] || fail_test "legacy CHANNEL input must not enable nightly publishing"
 [ "$PKG" = "apple-docs" ] || fail_test "manifest package name was not loaded"
 [ "$BINARY_NAME" = "apple-docs" ] || fail_test "manifest binary name was not loaded"
-[ "$PUBLISH_LINUX_PACKAGES" = "false" ] || fail_test "macOS-only project enabled Linux packages"
-[ "${RELEASE_ASSETS[*]}" = "darwin-amd64 darwin-arm64" ] || fail_test "unexpected release assets"
+[ "$(yq -r 'has("linux_packages")' "$MANIFEST")" = "false" ] \
+  || fail_test "manifest must derive Linux packaging from platforms"
+[ "$PUBLISH_LINUX_PACKAGES" = "true" ] || fail_test "apple-docs Linux packages are not enabled"
+[ "${RELEASE_ASSETS[*]}" = "darwin-amd64 darwin-arm64 linux-amd64 linux-arm64" ] || fail_test "unexpected release assets"
 
 if [ "${PUBLISHER_CONFIG_ONLY_TEST:-}" = "1" ]; then
   printf 'PASS: publisher configuration is stable-only\n'

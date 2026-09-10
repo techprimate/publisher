@@ -1,3 +1,10 @@
 # apt source for the techprimate release registry — stable channel, source of truth.
 # Published verbatim to https://packages.techprimate.com/techprimate.sources by the publisher.
 # Add one deb822 stanza per project that publishes Linux packages, separated by a blank line.
+
+Types: deb
+URIs: https://packages.techprimate.com/apple-docs/deb
+Suites: stable
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/techprimate-archive-keyring.gpg

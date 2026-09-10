@@ -1,0 +1,17 @@
+name: apple-docs
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: techprimate <opensource@techprimate.app>
+description: CLI to explore Apple Developer Documentation
+vendor: techprimate
+homepage: https://github.com/techprimate/apple-docs-cli
+license: FSL-1.1-MIT
+mtime: ${MTIME}
+contents:
+  - src: dist/apple-docs-linux-${GOARCH}
+    dst: /usr/bin/apple-docs
+    file_info:
+      mode: 0755

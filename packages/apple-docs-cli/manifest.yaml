@@ -3,5 +3,6 @@ binary: apple-docs
 platforms:
   - darwin-amd64
   - darwin-arm64
-linux_packages: false
+  - linux-amd64
+  - linux-arm64
 homebrew_formula: apple-docs

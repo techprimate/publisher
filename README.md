@@ -35,7 +35,8 @@ of the GPG signing key and R2 write token.
 |   `-- _homebrew.yml     # reusable Homebrew formula publish workflow
 |-- packages/
 |   `-- apple-docs-cli/
-|       `-- manifest.yaml   # product names, platforms, and package formats
+|       |-- manifest.yaml   # product names and release platforms
+|       `-- nfpm.yaml       # rpm/deb package metadata and contents
 |-- repo/
 |   |-- techprimate.repo    # dnf/yum source
 |   `-- techprimate.sources # apt deb822 source
@@ -70,10 +71,10 @@ succeeds.
 
 At a high level, `scripts/publish.sh` reads the source project's manifest,
 downloads only its declared release assets, verifies immutable versioned paths,
-and publishes raw binaries under `bin/v<version>/`. When `linux_packages` is
-true, it also builds signed RPM and DEB packages, updates their indexes, and
-publishes the shared repository metadata. macOS-only projects skip all Linux
-packaging and GPG setup.
+and publishes raw binaries under `bin/v<version>/`. When the manifest declares
+Linux platforms, it also builds signed RPM and DEB packages, updates their
+indexes, and publishes the shared repository metadata. Projects without Linux
+platforms skip all Linux packaging and GPG setup.
 
 Homebrew publication is handled by `_homebrew.yml`: it reads the manifest and
 SHA256 values from
@@ -104,10 +105,21 @@ packages.techprimate.com/
 |-- techprimate.repo
 |-- techprimate.sources
 `-- apple-docs/
+    |-- rpm/
+    |   `-- stable/
+    |       |-- x86_64/
+    |       `-- aarch64/
+    |-- deb/
+    |   |-- pool/
+    |   |   `-- stable/
+    |   `-- dists/
+    |       `-- stable/
     `-- bin/
         `-- v<version>/
             |-- apple-docs-darwin-amd64
-            `-- apple-docs-darwin-arm64
+            |-- apple-docs-darwin-arm64
+            |-- apple-docs-linux-amd64
+            `-- apple-docs-linux-arm64
 ```
 
 Each project owns its own registry prefix. RPM trees split by `$basearch`, apt
@@ -115,8 +127,25 @@ uses `stable` as its suite, and raw binaries are stored under `bin/v<version>/`.
 
 ## End-User Install
 
-Apple Docs CLI supports macOS and installs the `apple-docs` executable through
-Homebrew:
+DNF/YUM:
+
+```sh
+sudo dnf config-manager --add-repo https://packages.techprimate.com/techprimate.repo
+sudo dnf install apple-docs
+```
+
+APT:
+
+```sh
+sudo curl -fsSL https://packages.techprimate.com/RPM-GPG-KEY-techprimate \
+  | sudo gpg --dearmor -o /usr/share/keyrings/techprimate-archive-keyring.gpg
+sudo curl -fsSL https://packages.techprimate.com/techprimate.sources \
+  -o /etc/apt/sources.list.d/techprimate.sources
+sudo apt update
+sudo apt install apple-docs
+```
+
+Homebrew on macOS or Linux:
 
 ```sh
 brew tap techprimate/homebrew-tap
@@ -154,11 +183,11 @@ to secrets and variables by name only.
 To publish another project:
 
 1. Add `packages/<source-repo>/manifest.yaml` with its package name, binary name,
-   release platforms, Linux-package flag, and Homebrew formula name.
+   release platforms, and Homebrew formula name.
 2. Add the configured formula under `templates/`.
-3. If `linux_packages` is true, add `packages/<source-repo>/nfpm.yaml`, a DNF
-   section in `repo/techprimate.repo`, and an apt stanza in
-   `repo/techprimate.sources`.
+3. If the manifest declares Linux platforms, add
+   `packages/<source-repo>/nfpm.yaml`, a DNF section in
+   `repo/techprimate.repo`, and an apt stanza in `repo/techprimate.sources`.
 4. Ensure the source repo's release workflow triggers `publish.yml` with
    `source_repo` and `tag`.
 5. Confirm that publishing the binary publicly is intended.
