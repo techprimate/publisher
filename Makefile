@@ -16,8 +16,13 @@
 #
 # Runs focused regression tests for publisher scripts.
 .PHONY: test
-test:
+test: test-homebrew
 	bash scripts/publish_rpm_reuse_test.sh
+
+## Validate rendered Homebrew templates (requires Homebrew)
+.PHONY: test-homebrew
+test-homebrew:
+	brew ruby scripts/homebrew_template_test.rb
 
 ## Format code and organize files
 #
