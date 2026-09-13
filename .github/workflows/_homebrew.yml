@@ -120,16 +120,17 @@ jobs:
           path: homebrew-tap
 
       - name: Render formula
+        env:
+          FORMULA: ${{ steps.meta.outputs.formula }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA_DARWIN_AMD64: ${{ steps.checksums.outputs.darwin_amd64 }}
+          SHA_DARWIN_ARM64: ${{ steps.checksums.outputs.darwin_arm64 }}
+          SHA_LINUX_AMD64: ${{ steps.checksums.outputs.linux_amd64 }}
+          SHA_LINUX_ARM64: ${{ steps.checksums.outputs.linux_arm64 }}
         run: |
           set -eo pipefail
           mkdir -p homebrew-tap/Formula
-          sed -e 's/{{VERSION}}/${{ steps.meta.outputs.version }}/g' \
-              -e 's/{{SHA_DARWIN_AMD64}}/${{ steps.checksums.outputs.darwin_amd64 }}/g' \
-              -e 's/{{SHA_DARWIN_ARM64}}/${{ steps.checksums.outputs.darwin_arm64 }}/g' \
-              -e 's/{{SHA_LINUX_AMD64}}/${{ steps.checksums.outputs.linux_amd64 }}/g' \
-              -e 's/{{SHA_LINUX_ARM64}}/${{ steps.checksums.outputs.linux_arm64 }}/g' \
-              "templates/${{ steps.meta.outputs.formula }}.rb" \
-              > "homebrew-tap/Formula/${{ steps.meta.outputs.formula }}.rb"
+          ruby scripts/render_homebrew.rb "templates/${FORMULA}.rb" "homebrew-tap/Formula/${FORMULA}.rb"
 
       - name: Create PR on Homebrew tap
         id: create-pr
