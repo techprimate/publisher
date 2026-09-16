@@ -3,7 +3,7 @@ class AppleDocs < Formula
   homepage 'https://github.com/techprimate/apple-docs-cli'
   version '{{VERSION}}'
   license 'FSL-1.1-MIT'
-  revision 1 if version.to_s == '0.0.4'
+  revision 1 if %w[0.0.4 0.0.5].include?(version.to_s)
 
   on_macos do
     depends_on macos: :ventura
@@ -32,6 +32,7 @@ class AppleDocs < Formula
   def install
     binary = Dir['apple-docs-*'].first
     bin.install binary => 'apple-docs'
+    (bin / 'apple-docs').chmod 0755
     generate_completions_from_executable(bin / 'apple-docs', '--generate-completion-script')
   end
 

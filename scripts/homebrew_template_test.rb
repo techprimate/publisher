@@ -10,6 +10,29 @@ def assert_equal(expected, actual)
   raise "Expected #{expected.inspect}, got #{actual.inspect}" unless expected == actual
 end
 
+def assert_install_generates_completions(formula, directory)
+  # -- Arrange --
+  prefix = Pathname(directory) / 'prefix'
+  formula.define_singleton_method(:prefix) { prefix }
+  source = Pathname(directory) / 'apple-docs-test'
+  source.write <<~SH
+    #!/bin/sh
+    test "$1" = '--generate-completion-script' || exit 1
+    printf 'completion for %s\\n' "$2"
+  SH
+  source.chmod 0644
+
+  # -- Act --
+  Dir.chdir(directory) { formula.install }
+
+  # -- Assert --
+  raise 'Installed binary is not executable' unless (formula.bin / 'apple-docs').executable?
+
+  assert_equal("completion for bash\n", (formula.bash_completion / 'apple-docs').read)
+  assert_equal("completion for zsh\n", (formula.zsh_completion / '_apple-docs').read)
+  assert_equal("completion for fish\n", (formula.fish_completion / 'apple-docs.fish').read)
+end
+
 def assert_rejected
   yield
 rescue ArgumentError
@@ -33,7 +56,7 @@ Dir.mktmpdir('publisher-homebrew-test') do |directory|
     template_path = File.join(root, 'templates', "#{name}.rb")
     template = File.read(template_path)
 
-    %w[0.0.3 0.0.4 0.0.5].each do |version|
+    %w[0.0.3 0.0.4 0.0.5 0.0.6].each do |version|
       values = checksums.merge('VERSION' => version)
       rendered = render_homebrew(template, values)
       raise 'Unresolved template placeholder' if rendered.match?(/\{\{.*?\}\}/)
@@ -52,7 +75,7 @@ Dir.mktmpdir('publisher-homebrew-test') do |directory|
         Homebrew::SimulateSystem.with(os: os, arch: arch) do
           path = Pathname(directory) / version / platform / "#{name}.rb"
           formula = Formulary.from_contents(name, path, rendered, tap: Tap.fetch('techprimate/publisher'))
-          expected_revision = name == 'apple-docs' && version == '0.0.4' ? 1 : 0
+          expected_revision = name == 'apple-docs' ? { '0.0.4' => 1, '0.0.5' => 1 }.fetch(version, 0) : 0
           assert_equal(version, formula.version.to_s)
           assert_equal(expected_revision, formula.revision)
           assert_equal(
@@ -61,6 +84,12 @@ Dir.mktmpdir('publisher-homebrew-test') do |directory|
           )
           assert_equal(checksums.fetch("SHA_#{platform.upcase.tr('-', '_')}"), formula.stable.checksum.to_s)
           raise 'Missing formula test' unless formula.test_defined?
+
+          if name == 'apple-docs' && version == '0.0.5'
+            Dir.mktmpdir('install-', directory) do |install_directory|
+              assert_install_generates_completions(formula, install_directory)
+            end
+          end
         end
       end
     end
