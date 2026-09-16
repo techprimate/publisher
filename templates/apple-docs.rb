@@ -3,7 +3,8 @@ class AppleDocs < Formula
   homepage "https://github.com/techprimate/apple-docs-cli"
   version "{{VERSION}}"
   license "FSL-1.1-MIT"
-  revision 1 if %w[0.0.4 0.0.5].include?(version.to_s)
+  revision 1 if version.to_s == "0.0.4"
+  revision 2 if version.to_s == "0.0.5"
 
   on_macos do
     depends_on macos: :ventura
@@ -30,6 +31,7 @@ class AppleDocs < Formula
   end
 
   def install
+    ENV["TELEMETRY_DISABLED"] = "true"
     binary = Dir["apple-docs-*"].first
     bin.install binary => "apple-docs"
     (bin / "apple-docs").chmod 0755
