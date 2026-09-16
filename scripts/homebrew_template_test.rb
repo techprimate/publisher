@@ -18,12 +18,17 @@ def assert_install_generates_completions(formula, directory)
   source.write <<~SH
     #!/bin/sh
     test "$1" = '--generate-completion-script' || exit 1
+    if [ "$TELEMETRY_DISABLED" != 'true' ]; then
+      printf 'unexpected telemetry output\\n'
+    fi
     printf 'completion for %s\\n' "$2"
   SH
   source.chmod 0644
 
   # -- Act --
-  Dir.chdir(directory) { formula.install }
+  with_env('TELEMETRY_DISABLED' => nil) do
+    Dir.chdir(directory) { formula.install }
+  end
 
   # -- Assert --
   raise 'Installed binary is not executable' unless (formula.bin / 'apple-docs').executable?
@@ -79,7 +84,7 @@ Dir.mktmpdir('publisher-homebrew-test') do |directory|
         Homebrew::SimulateSystem.with(os: os, arch: arch) do
           path = Pathname(directory) / version / platform / "#{name}.rb"
           formula = Formulary.from_contents(name, path, rendered, tap: Tap.fetch('techprimate/publisher'))
-          expected_revision = name == 'apple-docs' ? { '0.0.4' => 1, '0.0.5' => 1 }.fetch(version, 0) : 0
+          expected_revision = name == 'apple-docs' ? { '0.0.4' => 1, '0.0.5' => 2 }.fetch(version, 0) : 0
           assert_equal(version, formula.version.to_s)
           assert_equal(expected_revision, formula.revision)
           assert_equal(
