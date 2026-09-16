@@ -61,12 +61,16 @@ Dir.mktmpdir('publisher-homebrew-test') do |directory|
       rendered = render_homebrew(template, values)
       raise 'Unresolved template placeholder' if rendered.match?(/\{\{.*?\}\}/)
 
-      output_path = File.join(directory, "#{name}-#{version}.rb")
+      output_path = Pathname(directory) / version / 'Formula' / "#{name}.rb"
+      output_path.dirname.mkpath
       output, status = Open3.capture2e(values, RbConfig.ruby, File.join(__dir__, 'render_homebrew.rb'), template_path,
                                        output_path)
       raise "Renderer CLI failed: #{output}" unless status.success?
 
       assert_equal(rendered, File.read(output_path))
+
+      output, status = Open3.capture2e(HOMEBREW_BREW_FILE.to_s, 'style', output_path.to_s)
+      raise "Rendered formula style failed: #{output}" unless status.success?
 
       manifest.fetch('platforms').each do |platform|
         system, architecture = platform.split('-')
@@ -93,7 +97,7 @@ Dir.mktmpdir('publisher-homebrew-test') do |directory|
         end
       end
     end
-    puts "PASS: #{name} rendering, platform selection, and version-scoped revisions"
+    puts "PASS: #{name} rendering, Homebrew style, platform selection, and version-scoped revisions"
   end
 end
 
