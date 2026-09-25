@@ -23,12 +23,12 @@ jobs:
       HOMEBREW_NO_ANALYTICS: "1"
     steps:
       - name: Checkout publisher
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@304fc86d2c26bcd269547dbcfcfb4c853e710779 # main
+        uses: Homebrew/actions/setup-homebrew@2026.09.21.1
 
       - name: Validate Homebrew templates
         run: make test-homebrew
