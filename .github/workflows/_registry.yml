@@ -19,7 +19,7 @@ jobs:
     name: rpm / deb / raw → R2
     runs-on: ubuntu-latest
     container:
-      image: node:24-bookworm
+      image: node:26-bookworm
     # Optional approval gate — configure protection rules on the `publish`
     # environment to require a human to release. No rules == runs freely.
     environment: publish
