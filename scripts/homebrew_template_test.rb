@@ -57,6 +57,8 @@ checksums = {
 Dir.mktmpdir('publisher-homebrew-test') do |directory|
   Dir[File.join(root, 'packages/*/manifest.yaml')].each do |manifest_path|
     manifest = YAML.safe_load_file(manifest_path)
+    next unless manifest.key?('homebrew_formula')
+
     name = manifest.fetch('homebrew_formula')
     template_path = File.join(root, 'templates', "#{name}.rb")
     template = File.read(template_path)

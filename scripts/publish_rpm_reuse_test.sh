@@ -17,6 +17,7 @@ build_test_rpm() { # RELEASE OUT_FILE
   mkdir -p "${topdir}/tmp"
   printf '#!/usr/bin/env sh\nprintf apple-docs-test\n' > "${topdir}/SOURCES/apple-docs"
   chmod +x "${topdir}/SOURCES/apple-docs"
+  touch -t 202001010000 "${topdir}/SOURCES/apple-docs"
   cat > "$spec" <<EOF
 Name: apple-docs-test
 Version: 1.0.0
@@ -30,7 +31,7 @@ Test package
 
 %install
 mkdir -p %{buildroot}/usr/bin
-install -m 0755 %{_sourcedir}/apple-docs %{buildroot}/usr/bin/apple-docs
+install -p -m 0755 %{_sourcedir}/apple-docs %{buildroot}/usr/bin/apple-docs
 
 %files
 /usr/bin/apple-docs
