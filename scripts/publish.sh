@@ -201,12 +201,12 @@ if [ "$PUBLISH_DOWNLOADS" = "true" ]; then
 
   while IFS=$'\t' read -r asset destination; do
     [ -f "${BUILD}/dist/${asset}" ] || fail "missing release asset: ${asset}"
-    key="${PKG}/macos/v${VERSION}/${destination}"
+    key="${PKG}/downloads/v${VERSION}/${destination}"
     ensure_immutable "${BUILD}/dist/${asset}" "$key"
   done < <(yq -er '.downloads[] | [.asset, .filename] | @tsv' "$MANIFEST")
 
   while IFS=$'\t' read -r asset destination; do
-    key="${PKG}/macos/v${VERSION}/${destination}"
+    key="${PKG}/downloads/v${VERSION}/${destination}"
     if ! s3api head-object --bucket "$R2_BUCKET" --key "$key" >/dev/null 2>&1; then
       s3 cp "${BUILD}/dist/${asset}" "s3://${R2_BUCKET}/${key}" --no-progress
     fi
