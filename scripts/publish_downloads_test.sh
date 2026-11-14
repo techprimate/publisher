@@ -62,7 +62,7 @@ export REGISTRY_DOMAIN=packages.techprimate.com
 printf 'signed installer' > "$WORK/release/AudioPatch-HAL-Installer.pkg"
 printf 'notarized app archive' > "$WORK/release/AudioPatch-HAL-Uninstaller.zip"
 bash "$REPO_ROOT/scripts/publish.sh" > "$WORK/first.log"
-key="$WORK/bucket/audiopatch/macos/v1.2.3"
+key="$WORK/bucket/audiopatch/downloads/v1.2.3"
 [ -f "$key/AudioPatch-HAL-Installer.pkg" ] || exit 1
 [ -f "$key/AudioPatch-HAL-Uninstaller.zip" ] || exit 1
 
