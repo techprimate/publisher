@@ -1,0 +1,6 @@
+package: audiopatch
+downloads:
+  - asset: AudioPatch-HAL-Installer.pkg
+    filename: AudioPatch-HAL-Installer.pkg
+  - asset: AudioPatch-HAL-Uninstaller.zip
+    filename: AudioPatch-HAL-Uninstaller.zip

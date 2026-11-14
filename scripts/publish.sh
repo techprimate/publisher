@@ -47,23 +47,36 @@ if [ ! -f "$MANIFEST" ]; then
 fi
 
 PKG="$(yq -er '.package' "$MANIFEST")"
-BINARY_NAME="$(yq -er '.binary' "$MANIFEST")"
+
+# Download-only projects declare complete, already signed release files. Keep
+# them separate from platform binaries, which feed Homebrew and Linux packages.
+if [ "$(yq -r '.downloads | length' "$MANIFEST")" -gt 0 ]; then
+  PUBLISH_DOWNLOADS=true
+else
+  PUBLISH_DOWNLOADS=false
+fi
+
+if [ "$PUBLISH_DOWNLOADS" = "false" ]; then
+  BINARY_NAME="$(yq -er '.binary' "$MANIFEST")"
+fi
 
 # Platform names are also release asset suffixes. For example, darwin-arm64
 # resolves to the release asset apple-docs-darwin-arm64. Declaring any Linux
 # platform enables Linux package generation.
 PUBLISH_LINUX_PACKAGES=false
 RELEASE_ASSETS=()
-while IFS= read -r asset; do
-  RELEASE_ASSETS+=("$asset")
-  case "$asset" in
-    linux-*) PUBLISH_LINUX_PACKAGES=true ;;
-  esac
-done < <(yq -er '.platforms[]' "$MANIFEST")
+if [ "$PUBLISH_DOWNLOADS" = "false" ]; then
+  while IFS= read -r asset; do
+    RELEASE_ASSETS+=("$asset")
+    case "$asset" in
+      linux-*) PUBLISH_LINUX_PACKAGES=true ;;
+    esac
+  done < <(yq -er '.platforms[]' "$MANIFEST")
 
-if [ "${#RELEASE_ASSETS[@]}" -eq 0 ]; then
-  printf 'platforms must not be empty in %s\n' "$MANIFEST" >&2
-  exit 1
+  if [ "${#RELEASE_ASSETS[@]}" -eq 0 ]; then
+    printf 'platforms must not be empty in %s\n' "$MANIFEST" >&2
+    exit 1
+  fi
 fi
 
 VERSION="${TAG#v}" # v1.3.0 -> 1.3.0
@@ -173,6 +186,34 @@ gpg_sign_detached() {  # SRC DST
   gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PASS_FILE" \
       --digest-algo sha256 -u "$GPG_KEY_ID" --armor --detach-sign -o "$2" "$1"
 }
+
+# Download-only assets are produced, signed and notarized by the source repo.
+# Fetch the full declared set before writing anything to the registry.
+if [ "$PUBLISH_DOWNLOADS" = "true" ]; then
+  log "Downloading ${SOURCE_REPO}@${TAG} release downloads"
+  mkdir -p "${BUILD}/dist"
+  download_args=()
+  while IFS= read -r asset; do
+    download_args+=(--pattern "$asset")
+  done < <(yq -er '.downloads[].asset' "$MANIFEST")
+  gh release download "$TAG" --repo "$SOURCE_REPO" --dir "${BUILD}/dist" \
+    "${download_args[@]}" --clobber
+
+  while IFS=$'\t' read -r asset destination; do
+    [ -f "${BUILD}/dist/${asset}" ] || fail "missing release asset: ${asset}"
+    key="${PKG}/macos/v${VERSION}/${destination}"
+    ensure_immutable "${BUILD}/dist/${asset}" "$key"
+  done < <(yq -er '.downloads[] | [.asset, .filename] | @tsv' "$MANIFEST")
+
+  while IFS=$'\t' read -r asset destination; do
+    key="${PKG}/macos/v${VERSION}/${destination}"
+    if ! s3api head-object --bucket "$R2_BUCKET" --key "$key" >/dev/null 2>&1; then
+      s3 cp "${BUILD}/dist/${asset}" "s3://${R2_BUCKET}/${key}" --no-progress
+    fi
+  done < <(yq -er '.downloads[] | [.asset, .filename] | @tsv' "$MANIFEST")
+  log "Published ${PROJECT} ${VERSION} to ${REGISTRY_DOMAIN}"
+  exit 0
+fi
 
 # === 0. GPG setup =============================================================
 # GPG signs RPM packages and Linux repository metadata. Raw binaries use

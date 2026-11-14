@@ -33,7 +33,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-type:
+    name: Select publish targets
+    runs-on: ubuntu-latest
+    outputs:
+      homebrew: ${{ steps.manifest.outputs.homebrew }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read manifest
+        id: manifest
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+        run: |
+          set -euo pipefail
+          manifest="packages/${SOURCE_REPO##*/}/manifest.yaml"
+          test -f "$manifest"
+          if grep -q '^homebrew_formula:' "$manifest"; then
+            echo 'homebrew=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'homebrew=false' >> "$GITHUB_OUTPUT"
+          fi
+
   registry:
+    needs: release-type
     name: Registry (rpm / deb / raw)
     uses: ./.github/workflows/_registry.yml
     with:
@@ -43,7 +65,8 @@ jobs:
 
   homebrew:
     name: Homebrew tap
-    needs: registry
+    needs: [release-type, registry]
+    if: needs.release-type.outputs.homebrew == 'true'
     uses: ./.github/workflows/_homebrew.yml
     with:
       source_repo: ${{ inputs.source_repo }}

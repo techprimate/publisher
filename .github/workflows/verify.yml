@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  homebrew-templates:
-    name: Homebrew templates
+  publisher-tests:
+    name: Publisher tests
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     env:
@@ -30,5 +30,10 @@ jobs:
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@2026.09.21.1
 
-      - name: Validate Homebrew templates
-        run: make test-homebrew
+      - name: Install Linux test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm yq
+
+      - name: Run publisher tests
+        run: make test

@@ -16,8 +16,18 @@
 #
 # Runs focused regression tests for publisher scripts.
 .PHONY: test
-test: test-homebrew
+test: test-homebrew test-rpm
+	bash scripts/publish_downloads_test.sh
+
+## Run RPM regression in Linux (Docker on macOS)
+.PHONY: test-rpm
+test-rpm:
+ifeq ($(shell uname -s),Darwin)
+	docker build --platform linux/amd64 -f scripts/test-rpm.Dockerfile -t publisher-rpm-test .
+	docker run --rm --platform linux/amd64 -v "$(CURDIR):/publisher:ro" -w /publisher publisher-rpm-test bash scripts/publish_rpm_reuse_test.sh
+else
 	bash scripts/publish_rpm_reuse_test.sh
+endif
 
 ## Validate rendered Homebrew templates (requires Homebrew)
 .PHONY: test-homebrew

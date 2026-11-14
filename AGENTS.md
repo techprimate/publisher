@@ -17,6 +17,10 @@ the R2-backed registry at `packages.techprimate.com`.
 - **No metadata bleed.** Package descriptions/changelogs are templated
   explicitly in `nfpm.yaml`, never auto-derived from private git history.
 
+## Verification
+
+- Run publisher regression tests with `make test`. Keep new publisher tests in that target.
+
 ## Onboarding a project
 
 Add `packages/<source-repo>/manifest.yaml` and the configured Homebrew formula
