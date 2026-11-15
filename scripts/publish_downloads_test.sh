@@ -11,6 +11,8 @@ cat > "$WORK/bin/gh" <<'EOF'
 set -euo pipefail
 [ "$1 $2" = "release download" ] || exit 2
 shift 2
+[ "$1" = "hal-v1.2.3" ] || exit 2
+shift
 dir=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -55,7 +57,7 @@ fi
 EOF
 chmod +x "$WORK/bin/gh" "$WORK/bin/aws"
 export PATH="$WORK/bin:$PATH" TEST_RELEASE="$WORK/release" TEST_BUCKET="$WORK/bucket"
-export SOURCE_REPO=techprimate/AudioPatch TAG=v1.2.3
+export SOURCE_REPO=techprimate/AudioPatch TAG=hal-v1.2.3
 export R2_BUCKET=test-bucket R2_S3_ENDPOINT=https://example.invalid
 export REGISTRY_DOMAIN=packages.techprimate.com
 
@@ -74,12 +76,29 @@ if bash "$REPO_ROOT/scripts/publish.sh" > "$WORK/changed.log" 2>&1; then
 fi
 grep -q 'immutability violation' "$WORK/changed.log"
 [ "$(cat "$key/AudioPatch-HAL-Installer.pkg")" = 'signed installer' ] || exit 1
+[ "$(cat "$key/AudioPatch-HAL-Uninstaller.zip")" = 'notarized app archive' ] || exit 1
 
 printf 'signed installer' > "$WORK/release/AudioPatch-HAL-Installer.pkg"
 rm "$WORK/release/AudioPatch-HAL-Uninstaller.zip"
+mkdir -p "$WORK/empty-bucket"
+export TEST_BUCKET="$WORK/empty-bucket"
 if bash "$REPO_ROOT/scripts/publish.sh" > "$WORK/missing.log" 2>&1; then
   echo 'FAIL: missing declared release asset was accepted' >&2
   exit 1
 fi
 grep -q 'missing release asset' "$WORK/missing.log"
-printf 'PASS: declared downloads publish immutably and missing assets fail\n'
+[ -z "$(find "$TEST_BUCKET" -type f -print -quit)" ] || exit 1
+for invalid_tag in v1.2.3 hal-v1.2.3-beta hal-v1x2x3; do
+  if TAG="$invalid_tag" bash "$REPO_ROOT/scripts/publish.sh" > "$WORK/invalid.log" 2>&1; then
+    echo "FAIL: invalid HAL tag was accepted: $invalid_tag" >&2
+    exit 1
+  fi
+  grep -q 'does not match tag_pattern' "$WORK/invalid.log"
+  [ -z "$(find "$TEST_BUCKET" -type f -print -quit)" ] || exit 1
+done
+(
+  export SOURCE_REPO=techprimate/apple-docs-cli TAG=v1.2.3 PUBLISHER_TEST_MODE=1
+  source "$REPO_ROOT/scripts/publish.sh"
+  [ "$VERSION" = 1.2.3 ] && [ "$TAG" = v1.2.3 ]
+)
+printf 'PASS: HAL tags normalize to version paths, invalid tags and changed or missing assets fail\n'

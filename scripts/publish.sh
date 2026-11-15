@@ -79,7 +79,21 @@ if [ "$PUBLISH_DOWNLOADS" = "false" ]; then
   fi
 fi
 
-VERSION="${TAG#v}" # v1.3.0 -> 1.3.0
+TAG_PATTERN="$(yq -r '.tag_pattern // ""' "$MANIFEST")"
+if [ -n "$TAG_PATTERN" ]; then
+  if [[ "$TAG" =~ $TAG_PATTERN ]] && [ "${BASH_REMATCH[0]}" = "$TAG" ]; then
+    VERSION="${BASH_REMATCH[1]:-}"
+    if [ -z "$VERSION" ]; then
+      printf 'tag_pattern must capture a non-empty version from tag: %s\n' "$TAG" >&2
+      exit 1
+    fi
+  else
+    printf 'tag %s does not match tag_pattern in %s\n' "$TAG" "$MANIFEST" >&2
+    exit 1
+  fi
+else
+  VERSION="${TAG#v}" # v1.3.0 -> 1.3.0
+fi
 SUITE="stable"
 
 export AWS_DEFAULT_REGION="auto"  # R2 ignores region but the CLI requires one.
