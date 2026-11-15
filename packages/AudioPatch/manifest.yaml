@@ -1,4 +1,5 @@
 package: audiopatch
+tag_pattern: '^hal-v([0-9]+\.[0-9]+\.[0-9]+)$'
 downloads:
   - asset: AudioPatch-HAL-Installer.pkg
     filename: AudioPatch-HAL-Installer.pkg
